@@ -22,7 +22,8 @@
 #   REGISTRY_AUTH_FILE   pull secret for the export (default: local docker config; used only if present)
 #   ARTIFACTS    local dir the lane's artifacts are collected into (default /tmp/ega/artifact; Prow
 #                sets it). For a remote target they are copied back here off the target.
-#   EGA_TOPOLOGY, EGA_SCENARIO  topology and scenario passed through to the target lane.
+#   EGA_TOPOLOGY, EGA_SCENARIO, EGA_STAGE  topology, scenario and lifecycle stage passed
+#       through to the target lane.
 set -euo pipefail
 
 # Image exports are several GiB in aggregate; prefer disk-backed staging over
@@ -185,6 +186,7 @@ cd /tmp/ega/build
 EGA_ARTIFACT_DIR="${lane_artifacts}" \
 EGA_TOPOLOGY="${EGA_TOPOLOGY:-evpn.clab.yml}" \
 EGA_SCENARIO="${EGA_SCENARIO:-base}" \
+EGA_STAGE="${EGA_STAGE:-full}" \
 bash test/e2e/run.sh
 EOF
 
