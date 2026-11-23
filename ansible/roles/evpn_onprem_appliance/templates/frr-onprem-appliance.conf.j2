@@ -7,8 +7,22 @@ hostname {{ inventory_hostname }}
 log syslog informational
 no ipv6 forwarding
 !
+{% if multihoming.enabled | default(false) | bool %}
+interface {{ trunk_interface }}
+ evpn mh es-id {{ multihoming.es_id }}
+ evpn mh es-sys-mac {{ multihoming.es_sys_mac }}
+ evpn mh es-df-pref {{ multihoming.df_pref | default(32767) }}
+exit
+!
+{% endif %}
+{% if multihoming.enabled | default(false) | bool and tunnel.underlay_interface | default('') | length > 0 %}
+interface {{ tunnel.underlay_interface }}
+ evpn mh uplink
+exit
+!
+{% endif %}
 router bgp {{ bgp.onprem_asn }}
- bgp router-id {{ tunnel.onprem_ip }}
+ bgp router-id {{ _evpn_onprem_appliance_ip }}
  bgp log-neighbor-changes
  bgp graceful-restart
  no bgp ebgp-requires-policy
@@ -30,8 +44,11 @@ router bgp {{ bgp.onprem_asn }}
 {% for s in stretches %}
 {% set vni = 10000 + s.vlan %}
   vni {{ vni }}
-   rd {{ tunnel.onprem_ip }}:{{ vni }}
+   rd {{ _evpn_onprem_appliance_ip }}:{{ vni }}
    route-target import {{ bgp.onprem_asn }}:{{ vni }}
+{% for peer_asn in _evpn_onprem_appliance_peer_asns | default([]) %}
+   route-target import {{ peer_asn }}:{{ vni }}
+{% endfor %}
    route-target import {{ bgp.workload_asn }}:{{ vni }}
    route-target export {{ bgp.onprem_asn }}:{{ vni }}
    advertise-svi-ip

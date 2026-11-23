@@ -1,5 +1,7 @@
 ---
-# Full deploy — idempotent, safe to re-run.
+# Full deploy — idempotent, safe to re-run. The cloud_infra play is skipped when
+# an inventory intentionally provides a test/qualification relay instead; the
+# cloud workload and all on-prem appliances still use this public deploy path.
 # Usage: ansible-playbook playbooks/deploy.yml
 
 - name: Deploy cloud infra (EVPN relay + WireGuard)
@@ -44,5 +46,8 @@
 - name: Health checks
   hosts: all
   become: true
-  roles:
-    - evpn_health_check
+  tasks:
+    - name: Run EVPN fabric health checks
+      ansible.builtin.include_role:
+        name: evpn_health_check
+      when: evpn_deploy_run_health_checks | default(true) | bool

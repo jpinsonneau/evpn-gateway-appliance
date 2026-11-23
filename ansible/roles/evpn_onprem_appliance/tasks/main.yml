@@ -1,4 +1,14 @@
 ---
+- name: Detect bootc image
+  ansible.builtin.command: bootc status --format=json
+  register: evpn_onprem_appliance_bootc_status
+  changed_when: false
+  failed_when: false
+
+- name: Set bootc image fact
+  ansible.builtin.set_fact:
+    evpn_onprem_appliance_bootc: "{{ evpn_onprem_appliance_bootc_status.rc == 0 }}"
+
 - name: Generate/load WireGuard keys
   # include_role (not a playbook_dir-relative path) so this resolves correctly once installed from a collection (ci-bootstrap-spec.md, "Cross-role include").
   ansible.builtin.include_role:
@@ -12,7 +22,9 @@
       {{ ['podman', 'tcpdump', 'traceroute', 'mtr', 'bind-utils', 'nmstate']
          + (['wireguard-tools'] if tunnel.type == 'wireguard' else []) }}
     state: present
-  when: ansible_facts.pkg_mgr in ['dnf', 'dnf5', 'yum']
+  when:
+    - ansible_facts.pkg_mgr in ['dnf', 'dnf5', 'yum']
+    - not evpn_onprem_appliance_bootc
 
 - name: Enable IP forwarding
   ansible.posix.sysctl:
@@ -23,6 +35,10 @@
   loop:
     - net.ipv4.ip_forward
     - net.ipv4.conf.all.forwarding
+
+- name: Select the appliance underlay address
+  ansible.builtin.set_fact:
+    _evpn_onprem_appliance_ip: "{{ evpn_underlay_ip | default(tunnel.onprem_ip) }}"
 
 - name: Deploy WireGuard client config
   no_log: true
@@ -40,6 +56,11 @@
     state: started
     enabled: true
   when: tunnel.type == 'wireguard'
+
+# ── Persistent all-active multihoming bond ──────────────────────
+- name: Configure all-active multihoming bond
+  ansible.builtin.include_tasks: multihoming.yml
+  when: multihoming.enabled | default(false) | bool
 
 # ── On-prem networking (nmstate) ────────────────────────────────
 - name: Configure on-prem networking

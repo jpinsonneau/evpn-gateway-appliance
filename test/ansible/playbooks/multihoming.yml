@@ -1,0 +1,169 @@
+---
+# CORENET-7502 CI acceptance checks. The appliances are real EVPN VTEPs in this
+# lane; the relay is deliberately small and only provides the eBGP EVPN control
+# plane between them. This keeps the CI model close to the FRR EVPN-MH test
+# topology while leaving NSX/DVS qualification to a separate environment.
+#
+# Deployment is intentionally performed by network.evpn_gateway.deploy. This
+# playbook contains only multihoming-specific assertions.
+- name: Validate the two deployed appliances
+  hosts: onprem_appliances
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Read the rendered FRR configuration
+      ansible.builtin.slurp:
+        src: /etc/frr/frr.conf
+      register: frr_config
+
+    - name: Read the negotiated bond state
+      ansible.builtin.command: cat /proc/net/bonding/{{ trunk_interface }}
+      register: bond_state
+      changed_when: false
+      retries: 15
+      delay: 2
+      until:
+        - "'Partner Mac Address:' in bond_state.stdout"
+        - "'Partner Mac Address: 00:00:00:00:00:00' not in bond_state.stdout"
+
+    - name: Assert both appliances configured the shared Ethernet Segment bond
+      ansible.builtin.assert:
+        that:
+          - "'Bonding Mode: IEEE 802.3ad Dynamic link aggregation' in bond_state.stdout"
+          - "'Slave Interface: eth1' in bond_state.stdout"
+        fail_msg: >-
+          {{ inventory_hostname }} did not configure the requested 802.3ad bond with its
+          local member. The shared edge bond contributes one link per appliance.
+
+    - name: Assert both appliances negotiated the shared upstream LACP peer
+      ansible.builtin.assert:
+        that:
+          - "'Partner Mac Address:' in bond_state.stdout"
+          - "'Partner Mac Address: 00:00:00:00:00:00' not in bond_state.stdout"
+        fail_msg: >-
+          {{ inventory_hostname }} did not negotiate its LACP member with the
+          emulated shared edge peer.
+      when: require_lacp_peer | bool
+
+    - name: Assert the appliance presents the shared LACP actor identity
+      ansible.builtin.assert:
+        that:
+          - "'System MAC address: 02:aa:bb:cc:dd:ee' in bond_state.stdout"
+        fail_msg: >-
+          {{ inventory_hostname }} did not present the shared ESI/LACP actor
+          system MAC on its appliance bond.
+
+    - name: Assert the shared Ethernet Segment identity is present in test input
+      ansible.builtin.assert:
+        that:
+          - >-
+            'evpn mh es-id 1' in
+            (frr_config.content | b64decode)
+          - >-
+            'evpn mh es-sys-mac 02:aa:bb:cc:dd:ee' in
+            (frr_config.content | b64decode)
+        fail_msg: >-
+          {{ inventory_hostname }} did not render the shared CORENET-7502
+          Ethernet Segment identity into FRR configuration.
+
+    - name: Read the multihoming anycast SVI state
+      ansible.builtin.command: ip -o link show trunk.100
+      register: anycast_svi
+      changed_when: false
+
+    - name: Assert both appliances use the shared anycast SVI MAC
+      ansible.builtin.assert:
+        that: "'02:00:5e:00:00:01' in anycast_svi.stdout"
+        fail_msg: >-
+          {{ inventory_hostname }} did not configure the shared anycast MAC
+          on trunk.100.
+
+    - name: Check the appliance EVPN session through the relay
+      ansible.builtin.command: podman exec frr vtysh -c "show bgp l2vpn evpn summary"
+      register: evpn_summary
+      changed_when: false
+      retries: 20
+      delay: 2
+      until:
+        - tunnel.cloud_ip in evpn_summary.stdout
+        - >-
+            'Established' in evpn_summary.stdout or 'PfxRcd' in evpn_summary.stdout
+
+    - name: Check that EVPN Ethernet Segment Type-1 routes are present
+      ansible.builtin.command: podman exec frr vtysh -c "show bgp l2vpn evpn route type 1"
+      register: evpn_type1
+      changed_when: false
+      failed_when: false
+
+    - name: Assert that EVPN Ethernet Segment Type-1 routes are present
+      ansible.builtin.assert:
+        that:
+          - evpn_type1.rc == 0
+          - "'03:02:aa:bb:cc:dd:ee:00:00:01' in evpn_type1.stdout"
+        fail_msg: >-
+          No Type-1 route for the shared Ethernet Segment was found on
+          {{ inventory_hostname }}. FRR output was:
+          {{ evpn_type1.stdout | default('') }}
+
+    - name: Check that EVPN Ethernet Segment Type-4 routes are present
+      ansible.builtin.command: podman exec frr vtysh -c "show bgp l2vpn evpn route type 4"
+      register: evpn_type4
+      changed_when: false
+      failed_when: false
+
+    - name: Assert that EVPN Ethernet Segment Type-4 routes are present
+      ansible.builtin.assert:
+        that:
+          - evpn_type4.rc == 0
+          - "'03:02:aa:bb:cc:dd:ee:00:00:01' in evpn_type4.stdout"
+        fail_msg: >-
+          No Type-4 route for the shared Ethernet Segment was found on
+          {{ inventory_hostname }}. FRR output was:
+          {{ evpn_type4.stdout | default('') }}
+
+- name: Verify overlay reachability before appliance failure
+  hosts: cloud_workload
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Ping the edge host through EVPN/VXLAN
+      ansible.builtin.command: ping -c 5 -W 1 10.42.1.10
+      register: overlay_baseline_ping
+      changed_when: false
+    - name: Assert the overlay reaches the edge host
+      ansible.builtin.assert:
+        that: overlay_baseline_ping.rc == 0
+
+- name: Take one appliance data-plane bond down
+  hosts: appliance-a
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Disable appliance-a's edge-facing bond
+      ansible.builtin.command: ip link set bond0 down
+      changed_when: true
+
+- name: Verify the overlay survives appliance-a failure
+  hosts: cloud_workload
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Ping the edge host after appliance-a failure
+      ansible.builtin.command: ping -c 5 -W 1 10.42.1.10
+      register: overlay_failover_ping
+      changed_when: false
+    - name: Assert EVPN/VXLAN traffic survives appliance-a failure
+      ansible.builtin.assert:
+        that: overlay_failover_ping.rc == 0
+
+- name: Restore appliance-a for deploy-stage inspection
+  hosts: appliance-a
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Re-enable bond members
+      ansible.builtin.command: ip link set eth1 up
+      changed_when: true
+    - name: Re-enable appliance-a's bond
+      ansible.builtin.command: ip link set bond0 up
+      changed_when: true

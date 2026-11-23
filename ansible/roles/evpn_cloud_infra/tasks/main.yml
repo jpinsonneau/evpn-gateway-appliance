@@ -1,4 +1,14 @@
 ---
+- name: Detect bootc image
+  ansible.builtin.command: bootc status --format=json
+  register: evpn_cloud_infra_bootc_status
+  changed_when: false
+  failed_when: false
+
+- name: Set bootc image fact
+  ansible.builtin.set_fact:
+    evpn_cloud_infra_bootc: "{{ evpn_cloud_infra_bootc_status.rc == 0 }}"
+
 - name: Generate/load WireGuard keys
   ansible.builtin.include_tasks: wireguard_keys.yml
   when: tunnel.type == 'wireguard'
@@ -9,7 +19,9 @@
       {{ ['podman', 'tcpdump', 'traceroute', 'mtr', 'bind-utils']
          + (['wireguard-tools'] if tunnel.type == 'wireguard' else []) }}
     state: present
-  when: ansible_facts.pkg_mgr in ['dnf', 'dnf5', 'yum']
+  when:
+    - ansible_facts.pkg_mgr in ['dnf', 'dnf5', 'yum']
+    - not evpn_cloud_infra_bootc
 
 - name: Enable IP forwarding
   ansible.posix.sysctl:
