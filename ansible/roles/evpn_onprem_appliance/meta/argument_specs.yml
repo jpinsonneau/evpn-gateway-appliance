@@ -31,8 +31,8 @@ argument_specs:
             type: str
             description: >-
               Tunnel address of the on-prem appliance. Used as the VTEP and BGP
-              router-id for single-link deployments; multihoming uses the
-              top-level evpn_underlay_ip instead.
+              router-id for both single-link and all-active multihoming
+              deployments.
           cloud_ip:
             type: str
             required: true
@@ -60,11 +60,6 @@ argument_specs:
         type: str
         default: 10.100.0.0/16
         description: CIDR of the infra VPC; routed to the cloud over the tunnel.
-      evpn_underlay_ip:
-        type: str
-        description: >-
-          Per-appliance underlay/VTEP address. Used by all-active multihoming
-          in place of tunnel.onprem_ip.
       workload_vpc_cidr:
         type: str
         default: 10.200.0.0/16

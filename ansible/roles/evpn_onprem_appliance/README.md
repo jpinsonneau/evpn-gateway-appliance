@@ -62,8 +62,9 @@ appliances exchange Ethernet-Segment routes through the EVPN relay; the role
 does not create a direct appliance-to-appliance BGP or BFD session. The shared
 anycast SVI MAC must be identical on both appliances:
 
-For this mode, set each host's `evpn_underlay_ip` to its relay-facing VTEP
-address; it replaces `tunnel.onprem_ip` for the multihoming datapath.
+For this mode, set each host's `tunnel.onprem_ip` to its relay-facing VTEP
+address. The value is host-specific when the appliances use different relay-facing
+addresses; no additional multihoming-only address input is required.
 
 ```yaml
 multihoming:

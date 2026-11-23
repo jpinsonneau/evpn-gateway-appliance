@@ -36,10 +36,6 @@
     - net.ipv4.ip_forward
     - net.ipv4.conf.all.forwarding
 
-- name: Select the appliance underlay address
-  ansible.builtin.set_fact:
-    _evpn_onprem_appliance_ip: "{{ evpn_underlay_ip | default(tunnel.onprem_ip) }}"
-
 - name: Deploy WireGuard client config
   no_log: true
   diff: false

@@ -18,7 +18,7 @@
 
 - name: Select the appliance underlay address
   ansible.builtin.set_fact:
-    _evpn_onprem_appliance_ip: "{{ evpn_underlay_ip | default(tunnel.onprem_ip) }}"
+    _evpn_onprem_appliance_ip: "{{ tunnel.onprem_ip }}"
 
 - name: Deploy trunk-br self-VLAN dispatcher
   ansible.builtin.template:
