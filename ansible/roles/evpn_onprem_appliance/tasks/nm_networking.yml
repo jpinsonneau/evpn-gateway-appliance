@@ -16,10 +16,6 @@
     dest: /etc/NetworkManager/dispatcher.d/90-ega-neigh-suppress
     mode: "0755"
 
-- name: Select the appliance underlay address
-  ansible.builtin.set_fact:
-    _evpn_onprem_appliance_ip: "{{ tunnel.onprem_ip }}"
-
 - name: Deploy trunk-br self-VLAN dispatcher
   ansible.builtin.template:
     src: nm-dispatch-trunk-vlans.j2
@@ -31,6 +27,12 @@
   ansible.builtin.set_fact:
     _evpn_onprem_appliance_desired_conns:
       - ega-bridge-trunk
+
+- name: Add the multihoming bond profile name
+  ansible.builtin.set_fact:
+    _evpn_onprem_appliance_desired_conns: >-
+      {{ _evpn_onprem_appliance_desired_conns + ['ega-' ~ trunk_interface] }}
+  when: multihoming.enabled | default(false) | bool
 
 - name: Add multihoming bond-member profile names
   ansible.builtin.set_fact:

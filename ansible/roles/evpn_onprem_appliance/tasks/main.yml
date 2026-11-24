@@ -1,4 +1,8 @@
 ---
+- name: Validate all-active multihoming configuration
+  ansible.builtin.include_tasks: multihoming.yml
+  when: multihoming.enabled | default(false) | bool
+
 - name: Detect bootc image
   ansible.builtin.command: bootc status --format=json
   register: evpn_onprem_appliance_bootc_status
@@ -53,14 +57,13 @@
     enabled: true
   when: tunnel.type == 'wireguard'
 
-# ── Persistent all-active multihoming bond ──────────────────────
-- name: Configure all-active multihoming bond
-  ansible.builtin.include_tasks: multihoming.yml
-  when: multihoming.enabled | default(false) | bool
-
 # ── On-prem networking (nmstate) ────────────────────────────────
 - name: Configure on-prem networking
   ansible.builtin.include_tasks: nm_networking.yml
+
+- name: Validate the configured multihoming bond
+  ansible.builtin.include_tasks: multihoming_validate.yml
+  when: multihoming.enabled | default(false) | bool
 
 # ── FRR ────────────────────────────────────────────────────────
 - name: Reconcile FRR configuration

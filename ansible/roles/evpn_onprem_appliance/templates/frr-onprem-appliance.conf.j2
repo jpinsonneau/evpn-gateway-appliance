@@ -22,7 +22,7 @@ exit
 !
 {% endif %}
 router bgp {{ bgp.onprem_asn }}
- bgp router-id {{ _evpn_onprem_appliance_ip }}
+ bgp router-id {{ tunnel.onprem_ip }}
  bgp log-neighbor-changes
  bgp graceful-restart
  no bgp ebgp-requires-policy
@@ -30,6 +30,9 @@ router bgp {{ bgp.onprem_asn }}
  !
  neighbor {{ tunnel.cloud_ip }} remote-as {{ bgp.infra_asn }}
  neighbor {{ tunnel.cloud_ip }} description infra-relay
+{% if multihoming.enabled | default(false) | bool %}
+ neighbor {{ tunnel.cloud_ip }} bfd
+{% endif %}
  !
  address-family ipv4 unicast
   network {{ tunnel.network_cidr | default('10.44.44.0/24') }}
@@ -44,11 +47,11 @@ router bgp {{ bgp.onprem_asn }}
 {% for s in stretches %}
 {% set vni = 10000 + s.vlan %}
   vni {{ vni }}
-   rd {{ _evpn_onprem_appliance_ip }}:{{ vni }}
+   rd {{ tunnel.onprem_ip }}:{{ vni }}
    route-target import {{ bgp.onprem_asn }}:{{ vni }}
-{% for peer_asn in _evpn_onprem_appliance_peer_asns | default([]) %}
-   route-target import {{ peer_asn }}:{{ vni }}
-{% endfor %}
+{% if multihoming.enabled | default(false) | bool %}
+   route-target import {{ hostvars[_evpn_onprem_appliance_mh_peer_name].bgp.onprem_asn }}:{{ vni }}
+{% endif %}
    route-target import {{ bgp.workload_asn }}:{{ vni }}
    route-target export {{ bgp.onprem_asn }}:{{ vni }}
    advertise-svi-ip

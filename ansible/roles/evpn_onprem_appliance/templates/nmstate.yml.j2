@@ -3,11 +3,9 @@
 # nmstatectl. nmstate reconciles current -> desired (create/modify/recreate) and verifies.
 # Interface names stay conventional; the profiles we create carry ownership via their NM
 # profile name (ega-*). The trunk itself is NOT owned: we attach it to the vlan-aware trunk
-# bridge as a trunk port, which nmstate does by editing the trunk's existing profile in place
-# (a partial merge) — so any pre-existing config (e.g. an LACP bond) is preserved and we do not
-# restate it. The regular path gets a VNI bridge per stretch. Multihoming instead attaches
+# bridge as a trunk port. The regular path gets a VNI bridge per stretch. Multihoming instead attaches
 # fixed-VNI VXLAN devices to the shared VLAN-aware bridge as access ports and puts the shared
-# anycast SVI on each VLAN sub-interface.
+# anycast SVI on each VLAN sub-interface. The role owns the multihoming bond profile.
 #
 # Two things nmstate cannot express, handled by dispatchers: trunk-br's own VLAN membership
 # and the VXLAN neigh_suppress flag.
@@ -25,16 +23,21 @@ desiredState:
     - name: {{ iface }}
       type: ethernet
       state: up
+      profile-name: ega-{{ trunk_interface }}-{{ iface }}
 {% endfor %}
     - name: {{ trunk_interface }}
       type: bond
       state: up
+      profile-name: ega-{{ trunk_interface }}
+      ipv4: {enabled: false}
+      ipv6: {enabled: false}
       link-aggregation:
         mode: 802.3ad
         options:
           ad_actor_system: {{ multihoming.es_sys_mac }}
           lacp_rate: fast
           miimon: 100
+          min_links: 1
           xmit_hash_policy: layer3+4
         port:
 {% for iface in multihoming.bond_interfaces %}
@@ -87,7 +90,7 @@ desiredState:
       type: vxlan
       state: up
       profile-name: ega-vxlan-{{ vni }}
-      vxlan: {id: {{ vni }}, local: {{ _evpn_onprem_appliance_ip }}, destination-port: 4789, learning: false}
+      vxlan: {id: {{ vni }}, local: {{ tunnel.onprem_ip }}, destination-port: 4789, learning: false}
 {% if not (multihoming.enabled | default(false) | bool) %}
     - name: br-vni{{ vni }}
       type: linux-bridge

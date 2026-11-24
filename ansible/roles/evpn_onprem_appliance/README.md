@@ -15,9 +15,8 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
 - The on-prem networking (nmstate, `tasks/nm_networking.yml`) is exercised by
   the Molecule lane against a veth stand-in trunk; it is not yet validated
   against actual hardware or a real tagged customer trunk (source-audit.md).
-- `tunnel.type: wireguard` is the only implemented transport. `ipsec` and
-  `direct-connect` are accepted values but have no implementation yet —
-  production requires Direct Connect or Site-to-Site VPN.
+- The role provisions WireGuard. With `ipsec` or `direct-connect`, the environment
+  must already provide the routed underlay. The WireGuard mode is single-appliance.
 - The FRR templates set no inbound/outbound route policy beyond a
   defensive `maximum-prefix`; see the comment at the top of
   `templates/frr-onprem-appliance.conf.j2`.
@@ -55,16 +54,18 @@ left unset — only override them if your VPC/pod-network CIDRs differ.
     trunk_interface: trunk0
 ```
 
-For two physical appliances, set `trunk_interface: bond0` and use the same
+For two physical appliances in `onprem_appliances`, set `trunk_interface: bond0` and use the same
 multihoming identity on both hosts. The CE-facing LACP bundle spans both
 appliances, so each appliance may contribute one local bond member. The
 appliances exchange Ethernet-Segment routes through the EVPN relay; the role
 does not create a direct appliance-to-appliance BGP or BFD session. The shared
-anycast SVI MAC must be identical on both appliances:
+anycast SVI MAC must be identical on both appliances and distinct from the ES MAC.
 
-For this mode, set each host's `tunnel.onprem_ip` to its relay-facing VTEP
-address. The value is host-specific when the appliances use different relay-facing
-addresses; no additional multihoming-only address input is required.
+Use a routed transport and give each host its own `tunnel.onprem_ip` and
+`bgp.onprem_asn`. Set `tunnel.cloud_ip` to the BGP/BFD peer address and
+`tunnel.underlay_interface` to the local interface FRR tracks for uplink loss.
+The relay derives its appliance neighbors from inventory and enables BFD on each
+adjacency. An optional per-appliance `multihoming.df_pref` sets the DF preference.
 
 ```yaml
 multihoming:

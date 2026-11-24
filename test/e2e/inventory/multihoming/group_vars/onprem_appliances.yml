@@ -8,4 +8,3 @@ multihoming:
   es_sys_mac: "02:aa:bb:cc:dd:ee"
   anycast_mac: "02:00:5e:00:00:01"
   df_pref: 32767
-require_lacp_peer: true

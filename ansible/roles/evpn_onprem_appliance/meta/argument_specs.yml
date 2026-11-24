@@ -29,6 +29,7 @@ argument_specs:
             description: Transport type. Determines which transport-specific configuration is applied.
           onprem_ip:
             type: str
+            required: true
             description: >-
               Tunnel address of the on-prem appliance. Used as the VTEP and BGP
               router-id for both single-link and all-active multihoming
